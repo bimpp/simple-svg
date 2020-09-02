@@ -683,6 +683,10 @@ namespace svg
             ofs.close();
             return true;
         }
+        void output(std::ostream& out_str) const
+        {
+            writeToStream(out_str);
+        }
     private:
         void writeToStream(std::ostream& str) const
         {
