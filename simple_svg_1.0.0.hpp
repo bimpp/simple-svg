@@ -286,13 +286,15 @@ namespace svg
     {
     public:
         Shape(Fill const & fill = Fill(), Stroke const & stroke = Stroke())
-            : fill(fill), stroke(stroke) { }
+            : fill(fill), stroke(stroke), extraData("") { }
         virtual ~Shape() { }
         virtual std::string toString(Layout const & layout) const = 0;
         virtual void offset(Point const & offset) = 0;
+        std::string& getExtraData() { return extraData; }
     protected:
         Fill fill;
         Stroke stroke;
+        std::string extraData;
     };
     template <typename T>
     inline std::string vectorToString(std::vector<T> collection, Layout const & layout)
@@ -316,7 +318,8 @@ namespace svg
             ss << elemStart("circle") << attribute("cx", translateX(center.x, layout))
                 << attribute("cy", translateY(center.y, layout))
                 << attribute("r", translateScale(radius, layout)) << fill.toString(layout)
-                << stroke.toString(layout) << emptyElemEnd();
+                << stroke.toString(layout)
+                << attribute("extra-data", extraData) << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -343,7 +346,8 @@ namespace svg
                 << attribute("cy", translateY(center.y, layout))
                 << attribute("rx", translateScale(radius_width, layout))
                 << attribute("ry", translateScale(radius_height, layout))
-                << fill.toString(layout) << stroke.toString(layout) << emptyElemEnd();
+                << fill.toString(layout) << stroke.toString(layout)
+                << attribute("extra-data", extraData) << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -371,7 +375,8 @@ namespace svg
                 << attribute("y", translateY(edge.y, layout))
                 << attribute("width", translateScale(width, layout))
                 << attribute("height", translateScale(height, layout))
-                << fill.toString(layout) << stroke.toString(layout) << emptyElemEnd();
+                << fill.toString(layout) << stroke.toString(layout)
+                << attribute("extra-data", extraData) << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -399,7 +404,8 @@ namespace svg
                 << attribute("y1", translateY(start_point.y, layout))
                 << attribute("x2", translateX(end_point.x, layout))
                 << attribute("y2", translateY(end_point.y, layout))
-                << stroke.toString(layout) << emptyElemEnd();
+                << stroke.toString(layout)
+                << attribute("extra-data", extraData) << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -436,7 +442,8 @@ namespace svg
                 ss << translateX(points[i].x, layout) << "," << translateY(points[i].y, layout) << " ";
             ss << "\" ";
 
-            ss << fill.toString(layout) << stroke.toString(layout) << emptyElemEnd();
+            ss << fill.toString(layout) << stroke.toString(layout)
+                << attribute("extra-data", extraData) << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -489,7 +496,8 @@ namespace svg
           ss << "\" ";
           ss << "fill-rule=\"evenodd\" ";
 
-          ss << fill.toString(layout) << stroke.toString(layout) << emptyElemEnd();
+          ss << fill.toString(layout) << stroke.toString(layout)
+              << attribute("extra-data", extraData) << emptyElemEnd();
           return ss.str();
        }
 
@@ -530,7 +538,8 @@ namespace svg
                 ss << translateX(points[i].x, layout) << "," << translateY(points[i].y, layout) << " ";
             ss << "\" ";
 
-            ss << fill.toString(layout) << stroke.toString(layout) << emptyElemEnd();
+            ss << fill.toString(layout) << stroke.toString(layout)
+                << attribute("extra-data", extraData) << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -555,6 +564,7 @@ namespace svg
             ss << elemStart("text") << attribute("x", translateX(origin.x, layout))
                 << attribute("y", translateY(origin.y, layout))
                 << fill.toString(layout) << stroke.toString(layout) << font.toString(layout)
+                << attribute("extra-data", extraData)
                 << ">" << content << elemEnd("text");
             return ss.str();
         }
