@@ -33,6 +33,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SIMPLE_SVG_HPP
 
 #include <vector>
+#include <map>
 #include <string>
 #include <sstream>
 #include <fstream>
@@ -177,8 +178,8 @@ namespace svg
     class Color : public Serializeable
     {
     public:
-        enum Defaults { Transparent = -1, Aqua, Black, Blue, Brown, Cyan, Fuchsia,
-            Green, Lime, Magenta, Orange, Purple, Red, Silver, White, Yellow };
+        enum Defaults { Transparent = -1, Aqua, Black, Gray, Blue, Brown, LightBrown, Cyan, Fuchsia,
+            Green, Lime, Magenta, Orange, Purple, Red, Silver, White, Yellow, LightYellow };
 
         Color(int r, int g, int b) : transparent(false), red(r), green(g), blue(b) { }
         Color(Defaults color)
@@ -188,8 +189,10 @@ namespace svg
             {
                 case Aqua: assign(0, 255, 255); break;
                 case Black: assign(0, 0, 0); break;
+                case Gray: assign(128, 128, 128); break;
                 case Blue: assign(0, 0, 255); break;
                 case Brown: assign(165, 42, 42); break;
+                case LightBrown: assign(255, 64, 64); break;
                 case Cyan: assign(0, 255, 255); break;
                 case Fuchsia: assign(255, 0, 255); break;
                 case Green: assign(0, 128, 0); break;
@@ -201,6 +204,7 @@ namespace svg
                 case Silver: assign(192, 192, 192); break;
                 case White: assign(255, 255, 255); break;
                 case Yellow: assign(255, 255, 0); break;
+                case LightYellow: assign(255, 255, 128); break;
                 default: transparent = true; break;
             }
         }
@@ -231,24 +235,36 @@ namespace svg
     class Fill : public Serializeable
     {
     public:
-        Fill(Color::Defaults color) : color(color) { }
+        Fill(Color::Defaults color)
+            : color(color) { }
         Fill(Color color = Color::Transparent)
             : color(color) { }
+        Fill(const std::string& _pattern_name)
+            : color(Color::Transparent), pattern_name(_pattern_name) { }
         std::string toString(Layout const & layout) const
         {
             std::stringstream ss;
-            ss << attribute("fill", color.toString(layout));
+            if (pattern_name.empty()) {
+                ss << attribute("fill", color.toString(layout));
+            }
+            else {
+                std::string pattern_value = "url(#";
+                pattern_value += pattern_name;
+                pattern_value += ")";
+                ss << attribute("fill", pattern_value);
+            }
             return ss.str();
         }
     private:
         Color color;
+        std::string pattern_name;
     };
 
     class Stroke : public Serializeable
     {
     public:
-        Stroke(double width = -1, Color color = Color::Transparent, bool nonScalingStroke = false)
-            : width(width), color(color), nonScaling(nonScalingStroke) { }
+        Stroke(double width = -1, Color color = Color::Transparent, Point _dash = Point(), bool nonScalingStroke = false)
+            : width(width), color(color), dash(_dash), nonScaling(nonScalingStroke) { }
         std::string toString(Layout const & layout) const
         {
             // If stroke width is invalid.
@@ -257,6 +273,11 @@ namespace svg
 
             std::stringstream ss;
             ss << attribute("stroke-width", translateScale(width, layout)) << attribute("stroke", color.toString(layout));
+            if (dash.x > 0.0 && dash.y > 0) {
+                std::stringstream ss_dasharray;
+                ss_dasharray << dash.x << " " << dash.y;
+                ss << attribute("stroke-dasharray", ss_dasharray.str());
+            }
             if (nonScaling)
                ss << attribute("vector-effect", "non-scaling-stroke");
             return ss.str();
@@ -264,6 +285,7 @@ namespace svg
     private:
         double width;
         Color color;
+        Point dash;
         bool nonScaling;
     };
 
@@ -282,19 +304,55 @@ namespace svg
         std::string family;
     };
 
+    class CustomAttributes : public Serializeable
+    {
+    public:
+        CustomAttributes() : attributes() {}
+
+    public:
+        std::string toString(Layout const& layout) const
+        {
+            std::string str;
+            if (!attributes.empty())
+            {
+                std::stringstream ss;
+                for (const std::pair<std::string, std::string>& it_attribute : attributes)
+                {
+                    ss << attribute(it_attribute.first, it_attribute.second);
+                }
+                str = ss.str();
+            }
+            return str;
+        }
+
+    public:
+        bool append(const std::string& _key, const std::string& _value)
+        {
+            if (attributes.find(_key) != attributes.cend())
+            {
+                return false;
+            }
+            attributes.insert(std::make_pair(_key, _value));
+            return true;
+        }
+        
+    private:
+        std::map<std::string, std::string> attributes;
+    };
+
     class Shape : public Serializeable
     {
     public:
         Shape(Fill const & fill = Fill(), Stroke const & stroke = Stroke())
-            : fill(fill), stroke(stroke), extraData("") { }
+            : fill(fill), stroke(stroke) { }
         virtual ~Shape() { }
         virtual std::string toString(Layout const & layout) const = 0;
-        virtual void offset(Point const & offset) = 0;
-        std::string& getExtraData() { return extraData; }
+        virtual void offset(Point const& offset) = 0;
+        CustomAttributes& getCustomAttributes() { return custom_attributes; };
     protected:
         Fill fill;
         Stroke stroke;
-        std::string extraData;
+        CustomAttributes custom_attributes;
     };
     template <typename T>
     inline std::string vectorToString(std::vector<T> collection, Layout const & layout)
@@ -319,7 +377,8 @@ namespace svg
                 << attribute("cy", translateY(center.y, layout))
                 << attribute("r", translateScale(radius, layout)) << fill.toString(layout)
                 << stroke.toString(layout)
-                << attribute("extra-data", extraData) << emptyElemEnd();
+                << custom_attributes.toString(layout)
+                << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -346,8 +405,10 @@ namespace svg
                 << attribute("cy", translateY(center.y, layout))
                 << attribute("rx", translateScale(radius_width, layout))
                 << attribute("ry", translateScale(radius_height, layout))
-                << fill.toString(layout) << stroke.toString(layout)
-                << attribute("extra-data", extraData) << emptyElemEnd();
+                << fill.toString(layout)
+                << stroke.toString(layout)
+                << custom_attributes.toString(layout)
+                << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -375,8 +436,10 @@ namespace svg
                 << attribute("y", translateY(edge.y, layout))
                 << attribute("width", translateScale(width, layout))
                 << attribute("height", translateScale(height, layout))
-                << fill.toString(layout) << stroke.toString(layout)
-                << attribute("extra-data", extraData) << emptyElemEnd();
+                << fill.toString(layout)
+                << stroke.toString(layout)
+                << custom_attributes.toString(layout)
+                << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -405,7 +468,8 @@ namespace svg
                 << attribute("x2", translateX(end_point.x, layout))
                 << attribute("y2", translateY(end_point.y, layout))
                 << stroke.toString(layout)
-                << attribute("extra-data", extraData) << emptyElemEnd();
+                << custom_attributes.toString(layout)
+                << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -442,8 +506,10 @@ namespace svg
                 ss << translateX(points[i].x, layout) << "," << translateY(points[i].y, layout) << " ";
             ss << "\" ";
 
-            ss << fill.toString(layout) << stroke.toString(layout)
-                << attribute("extra-data", extraData) << emptyElemEnd();
+            ss << fill.toString(layout)
+                << stroke.toString(layout)
+                << custom_attributes.toString(layout)
+                << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -496,8 +562,10 @@ namespace svg
           ss << "\" ";
           ss << "fill-rule=\"evenodd\" ";
 
-          ss << fill.toString(layout) << stroke.toString(layout)
-              << attribute("extra-data", extraData) << emptyElemEnd();
+          ss << fill.toString(layout)
+              << stroke.toString(layout)
+              << custom_attributes.toString(layout)
+              << emptyElemEnd();
           return ss.str();
        }
 
@@ -538,8 +606,10 @@ namespace svg
                 ss << translateX(points[i].x, layout) << "," << translateY(points[i].y, layout) << " ";
             ss << "\" ";
 
-            ss << fill.toString(layout) << stroke.toString(layout)
-                << attribute("extra-data", extraData) << emptyElemEnd();
+            ss << fill.toString(layout)
+                << stroke.toString(layout)
+                << custom_attributes.toString(layout)
+                << emptyElemEnd();
             return ss.str();
         }
         void offset(Point const & offset)
@@ -563,8 +633,10 @@ namespace svg
             std::stringstream ss;
             ss << elemStart("text") << attribute("x", translateX(origin.x, layout))
                 << attribute("y", translateY(origin.y, layout))
-                << fill.toString(layout) << stroke.toString(layout) << font.toString(layout)
-                << attribute("extra-data", extraData)
+                << fill.toString(layout)
+                << stroke.toString(layout)
+                << font.toString(layout)
+                << custom_attributes.toString(layout)
                 << ">" << content << elemEnd("text");
             return ss.str();
         }
@@ -666,13 +738,63 @@ namespace svg
         }
     };
 
+    class Pattern : public Serializeable
+    {
+    public:
+        Pattern(const std::string& _id, const Point& _position = Point(), const Point& _size = Point(), const std::string& _pattern_units = "userSpaceOnUse")
+            : layout(Dimensions(0, 0), Layout::Origin::TopLeft), id(_id), position(_position), size(_size), pattern_units(_pattern_units) {}
+        virtual ~Pattern() {}
+
+    public:
+        virtual std::string toString(Layout const& _layout) const
+        {
+            std::stringstream ss;
+            ss << elemStart("pattern")
+                << attribute("id", id)
+                << attribute("x", translateX(position.x, layout))
+                << attribute("y", translateY(position.y, layout))
+                << attribute("width", translateScale(size.x, layout))
+                << attribute("height", translateScale(size.y, layout))
+                << attribute("patternUnits", pattern_units)
+                << ">";
+            if (!body_nodes_str_list.empty()) {
+                for (const std::string& body_node_str : body_nodes_str_list) {
+                    ss << "\n\t\t";
+                    ss << body_node_str;
+                }
+            }
+            ss << "\t\t" << elemEnd("pattern");
+            return ss.str();
+        }
+
+    public:
+        Pattern& operator<<(const Shape& _shape)
+        {
+            body_nodes_str_list.push_back(_shape.toString(layout));
+            return *this;
+        }
+
+    private:
+        Layout layout;
+        std::string id;
+        Point position;
+        Point size;
+        std::string pattern_units;
+        std::vector<std::string> body_nodes_str_list;
+    };
+
     class Document
     {
     public:
         Document(std::string const & file_name, Layout layout = Layout())
             : file_name(file_name), layout(layout) { }
 
-        Document & operator<<(Shape const & shape)
+        Document & operator<<(Pattern const & pattern)
+        {
+            body_patterns_str_list.push_back(pattern.toString(layout));
+            return *this;
+        }
+        Document& operator<<(Shape const& shape)
         {
             body_nodes_str_list.push_back(shape.toString(layout));
             return *this;
@@ -707,6 +829,14 @@ namespace svg
                 << attribute("height", layout.dimensions.height, "px")
                 << attribute("xmlns", "http://www.w3.org/2000/svg")
                 << attribute("version", "1.1") << ">\n";
+            if (!body_patterns_str_list.empty())
+            {
+                str << "\t<defs>\n";
+                for (const std::string& body_pattern_str : body_patterns_str_list) {
+                    str << "\t" << body_pattern_str;
+                }
+                str << "\t</defs>\n";
+            }
             for (const auto& body_node_str : body_nodes_str_list) {
                 str << body_node_str;
             }
@@ -717,6 +847,7 @@ namespace svg
         std::string file_name;
         Layout layout;
 
+        std::vector<std::string> body_patterns_str_list;
         std::vector<std::string> body_nodes_str_list;
     };
 }
